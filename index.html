@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Space Invaders</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #050510;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: white;
+        }
+        #game-container {
+            position: relative;
+        }
+        canvas {
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.2);
+            border: 2px solid rgba(0, 255, 255, 0.5);
+            border-radius: 8px;
+            background: radial-gradient(circle at center, #111122 0%, #000000 100%);
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 24px;
+            font-weight: bold;
+            color: #0ff;
+            text-shadow: 0 0 10px #0ff;
+            pointer-events: none;
+            direction: ltr;
+        }
+        #game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 40px;
+            color: #f0f;
+            text-shadow: 0 0 20px #f0f;
+            display: none;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="ui">SCORE: <span id="score">0</span></div>
+    <div id="game-over">GAME OVER<br><span style="font-size: 20px; color: #fff;">Press F5 to Restart</span></div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreElement = document.getElementById('score');
+    const gameOverScreen = document.getElementById('game-over');
+
+    let score = 0;
+    let gameOver = false;
+
+    // מקשים
+    const keys = {};
+    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keyup', e => keys[e.code] = false);
+
+    // מחלקת שחקן
+    const player = {
+        x: canvas.width / 2,
+        y: canvas.height - 50,
+        width: 40,
+        height: 30,
+        speed: 5,
+        color: '#00ffff',
+        lastShot: 0,
+        draw() {
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = this.color;
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.moveTo(this.x, this.y - this.height/2);
+            ctx.lineTo(this.x - this.width/2, this.y + this.height/2);
+            ctx.lineTo(this.x + this.width/2, this.y + this.height/2);
+            ctx.closePath();
+            ctx.fill();
+            ctx.shadowBlur = 0; // איפוס
+        },
+        update() {
+            if (keys['ArrowLeft'] && this.x - this.width/2 > 0) this.x -= this.speed;
+            if (keys['ArrowRight'] && this.x + this.width/2 < canvas.width) this.x += this.speed;
+            
+            if (keys['Space'] && Date.now() - this.lastShot > 300) {
+                bullets.push({x: this.x, y: this.y - this.height, dy: -7, color: '#00ffff', isPlayer: true});
+                this.lastShot = Date.now();
+            }
+        }
+    };
+
+    // מערכים לישויות
+    let aliens = [];
+    let bullets = [];
+    let particles = [];
+    let stars = [];
+
+    // יצירת כוכבים לרקע
+    for(let i = 0; i < 100; i++) {
+        stars.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            size: Math.random() * 2,
+            speed: Math.random() * 2 + 0.5
+        });
+    }
+
+    // יצירת חייזרים
+    const colors = ['#ff00ff', '#00ff00', '#ffff00'];
+    let alienDirection = 1;
+    let alienSpeed = 1;
+
+    function initAliens() {
+        for (let row = 0; row < 4; row++) {
+            for (let col = 0; col < 8; col++) {
+                aliens.push({
+                    x: 100 + col * 60,
+                    y: 50 + row * 50,
+                    width: 30,
+                    height: 20,
+                    color: colors[row % colors.length]
+                });
+            }
+        }
+    }
+    initAliens();
+
+    // פונקציית פיצוץ
+    function createExplosion(x, y, color) {
+        for (let i = 0; i < 15; i++) {
+            particles.push({
+                x: x,
+                y: y,
+                dx: (Math.random() - 0.5) * 8,
+                dy: (Math.random() - 0.5) * 8,
+                life: 1,
+                color: color
+            });
+        }
+    }
+
+    function checkCollision(rect1, rect2) {
+        return rect1.x < rect2.x + rect2.width &&
+               rect1.x + rect1.width > rect2.x &&
+               rect1.y < rect2.y + rect2.height &&
+               rect1.y + rect1.height > rect2.y;
+    }
+
+    // לולאת המשחק המרכזית
+    function gameLoop() {
+        if (gameOver) {
+            gameOverScreen.style.display = 'block';
+            return;
+        }
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // ציור ועדכון כוכבים (רקע)
+        ctx.fillStyle = '#ffffff';
+        stars.forEach(star => {
+            star.y += star.speed;
+            if (star.y > canvas.height) { star.y = 0; star.x = Math.random() * canvas.width; }
+            ctx.beginPath();
+            ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        player.update();
+        player.draw();
+
+        // עדכון כדורים
+        bullets.forEach((bullet, index) => {
+            bullet.y += bullet.dy;
+            
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = bullet.color;
+            ctx.fillStyle = bullet.color;
+            ctx.fillRect(bullet.x - 2, bullet.y, 4, 15);
+            ctx.shadowBlur = 0;
+
+            // מחיקת כדורים שיצאו מהמסך
+            if (bullet.y < 0 || bullet.y > canvas.height) bullets.splice(index, 1);
+        });
+
+        // עדכון חייזרים
+        let hitEdge = false;
+        aliens.forEach(alien => {
+            alien.x += alienSpeed * alienDirection;
+            if (alien.x + alien.width > canvas.width - 20 || alien.x < 20) hitEdge = true;
+        });
+
+        if (hitEdge) {
+            alienDirection *= -1;
+            alienSpeed += 0.1; // המשחק נהיה קשה יותר
+            aliens.forEach(alien => alien.y += 20);
+        }
+
+        // ציור חייזרים ובדיקת פגיעות
+        for (let i = aliens.length - 1; i >= 0; i--) {
+            let alien = aliens[i];
+            
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = alien.color;
+            ctx.fillStyle = alien.color;
+            ctx.fillRect(alien.x, alien.y, alien.width, alien.height);
+            ctx.shadowBlur = 0;
+
+            // האם כדור פגע בחייזר?
+            for (let j = bullets.length - 1; j >= 0; j--) {
+                let bullet = bullets[j];
+                if (bullet.isPlayer && bullet.x > alien.x && bullet.x < alien.x + alien.width &&
+                    bullet.y > alien.y && bullet.y < alien.y + alien.height) {
+                    
+                    createExplosion(alien.x + alien.width/2, alien.y + alien.height/2, alien.color);
+                    aliens.splice(i, 1);
+                    bullets.splice(j, 1);
+                    score += 10;
+                    scoreElement.innerText = score;
+                    break;
+                }
+            }
+
+            // האם חייזר הגיע לשחקן?
+            if (alien.y + alien.height > player.y - player.height/2) {
+                gameOver = true;
+            }
+            
+            // סיכוי שהחייזר ירה
+            if (Math.random() < 0.001) {
+                bullets.push({x: alien.x + alien.width/2, y: alien.y + alien.height, dy: 5, color: '#ff0000', isPlayer: false});
+            }
+        }
+
+        // פגיעת כדור חייזר בשחקן
+        bullets.forEach(bullet => {
+            if (!bullet.isPlayer && bullet.x > player.x - player.width/2 && bullet.x < player.x + player.width/2 &&
+                bullet.y > player.y - player.height/2 && bullet.y < player.y + player.height/2) {
+                createExplosion(player.x, player.y, player.color);
+                gameOver = true;
+            }
+        });
+
+        // עדכון וציור חלקיקים (פיצוצים)
+        for (let i = particles.length - 1; i >= 0; i--) {
+            let p = particles[i];
+            p.x += p.dx;
+            p.y += p.dy;
+            p.life -= 0.05;
+            if (p.life <= 0) {
+                particles.splice(i, 1);
+            } else {
+                ctx.globalAlpha = p.life;
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        // ניצחון
+        if (aliens.length === 0) {
+            initAliens();
+            alienSpeed += 0.5;
+        }
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    // התחלת המשחק
+    gameLoop();
+</script>
+
+</body>
+</html>
